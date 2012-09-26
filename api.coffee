@@ -1,33 +1,144 @@
-
 @include = ->
+
+  # backend API:
+  #   create_database name
+  #   destroy_database name
+  #   enumerate_databases # 'data' (name)
+  #   retrieve_document db, doc_id # 'data' (doc)
+  #   update_document, db, doc_id, meta, body_buffer
+  # Events:
+  #   # error occurred (final)
+  #   'error', (error) ->
+  #   # successful completion (final)
+  #   'end'
+  #   # one more to retrieve data
+  #   'data'
+
+  backend
+
+  motd = 'Welcome'
 
   # Trying to figure out the API
   # Is the list on
   #   http://wiki.apache.org/couchdb/Complete_HTTP_API_Reference
   # actually accurate and complete?
 
+  helper
+    start_json: ->
+      headers =
+        'Content-Type': 'application/json'
+        'Cache-Control': 'must-revalidate'
+      @res.writeHead 200, headers
+
   # Actions maked 'system' are most probably implementation-dependent.
   # Review what BigCouch et al. do for these.
-  
 
   #### Server-level misc. methods
-  @get
-    '/': ->
-    '/favicon.ico': ->
-    '_all_dbs': ->
-    '/_active_tasks': -> # system
-  @post
-    '/_replicate'
-  @all
-    '/_replicator'  # replace with a normal database,
-      # with an external replicator process monitoring its _changes
-  @get
-    '/_uuids'
+  @get '/', ->
+      # http://wiki.apache.org/couchdb/HttpGetRoot
+      # Note: Apache CouchDB sends text/plain, not json
+      @json
+        couchdb: motd
+        version: '0.1.0'
+
+  # @get '/favicon.ico': ->
+  @use 'favicon'
+
+  @get '/_all_dbs', ->
+      # http://wiki.apache.org/couchdb/HttpGetAllDbs
+      # Note: Apache CouchDB sends text/plain, not json
+      # Note: this could be a very long list. I originally planned
+      # to make this async, but Apache CouchDB provides a Content-Length
+      # for it?? (And their list is sorted??)
+      all_dbs = []
+      r = backend.enumerate_databases()
+      r.on 'data', (name) ->
+        all_dbs.push name
+      r.on 'error', (e) ->
+        @res.writeHead 500
+        @res.end
+      r.on 'end', (e) ->
+        @json all_dbs
+
+  @get '/_active_tasks', -> # system
+    @res.writeHead 500
+  @post '/_replicate', ->
+    @res.writeHead 500 # re-use mikeal/replicate here
+
+  # @all '/_replicator', ->
+  #   replace with a normal database,
+  #   with an external replicator process monitoring its _changes
+
+  backend.create_database '_replicator'
+  monitor_database '_replicator', (change) ->
+    # start/stop a given replication
+  start_replicators()
+
+  new_random_uuid = (cb) ->
+    crypto.randomBytes 16, (e,buf) ->
+      if e
+        cb e
+      else
+        cb null, buf.toString 'hex'
+
+  new_sequential_uuid = ->
+    crypto.randomBytes 13, (e,buf) ->
+      if e
+        cb e
+      else
+        r = retrieve_database_uuid_sequence()
+        r.on 'data', (seq) ->
+          seqbuf = new Buffer 4
+          seqbuf.writeUInt32BE seq
+          seq += some_random_number
+          r = save_database_uuid_sequence seq
+          r.on 'error', (e) ->
+            cb e
+          r.on 'end', ->
+            finalbuf = new Buffer 16
+            buf.copy finalbuf, 0
+            seqbuf.copy finalbuf, buf.length
+            cb null, finalbuf.toString 'hex'
+
+  new_uuid = (cb) ->
+    switch config.retrieve 'uuids/algorithm', 'random'
+      when 'sequential'
+        # 26 hex chars (13 bytes) random prefix, modified
+        # when 6 characters (3 bytes) sequence (with random
+        # increments)
+        new_sequential_uuid cb
+      when 'utc_random'
+        # 14 hex microseconds since epoch, 18 hex random
+        new_utc_uuid cb
+      else # 'random'
+        # 32 hex characters (16 bytes) at random
+        new_random_uuid cb
+
+
+  # http://wiki.apache.org/couchdb/HttpGetUuids
+  @get '/_uuids', ->
+    count = @query.count ? 1
+    uuids = []
+    r = new_uuid (e,value) ->
+        if e
+          @res.writeHead 500
+        else
+          uuids.push value
+          if i is count
+            @json uuid: uuids
+          else
+            r()
+
   @post '/_restart' # system
   @get '/_stats'    # system
   @get '/_log'      # system
-  @get '/_utils/*'  # replace with a normal database (if possible
-    # based on paths) so that futon or futon2 may be used
+  # @get '/_utils/*'
+  #   replace with a normal database (if possible
+  #   based on paths) so that futon or futon2 may be used
+
+  # Note: we make _utils a couchapp, à la futon2
+  ensure_database '_utils'
+  push_app '_utils'
 
   #### Server configuration
   @get '/_config'   # system?
@@ -51,14 +162,28 @@
 
   #### User database
   # This is a regular database
-  @all '/_users'
+  # @all '/_users'
+  ensure_database '_users'
+  push_app '_users'
 
   #### Database methods
   # Note: restrict db names to proper syntax (what is it?)
   # (At least cannot start with underscore.)
   @get '/:db'
-  @put '/:db'
-  @del '/:db'
+  @put '/:db', ->
+    r = backend.create_database @params.db
+    r.on 'error', (e) ->
+      @res.writeHead 412
+    r.on 'end', ->
+      @json ok:true
+
+  @del '/:db', ->
+    r = backend.destroy_database @params.db
+    r.on 'error', (e) ->
+      @res.writeHead 404
+    r.on 'end', ->
+      @json ok:true
+
   @get '/:db/_changes'
   @post '/:db/_compact' # system
   @post '/:db/_compact/:design' # system
@@ -79,10 +204,66 @@
   #### Database document methods
   # Note: resttrict doc names to valid ones (what are they?)
   # At least, cannot start with underscore.
-  @post '/:db'
-  @get  '/:db/:doc'
-  @head '/:db/:doc'
-  @put  '/:db/:doc'
+  @post '/:db', ->
+
+  @get  '/:db/:doc', ->
+    r = backend.retrieve_document @params.db, @params.doc
+    r.on 'data', (doc) ->
+      @json doc
+    r.on 'error', (e) ->
+      @res.writeHead 404
+
+  @head '/:db/:doc', ->
+
+  @put  '/:db/:doc', ->
+    push_revision = (meta,body) ->
+      meta.rev = body._rev = meta.version + '-' + new_uuid()
+      body_as_json = JSON.stringify body
+      body_buffer = new Buffer body_as_json
+      meta.etag = md5sum_as_hex body_buffer
+      meta.length = body_buffer.length
+      r1 = backend.next_database_update_seq()
+      r1.on 'error', ->
+        @res.writeHead 500
+      r1.on 'data', (seq) ->
+        meta.local_seq = seq
+        r2 = backend.update_document @params.db, @params.doc, meta, body_as_json
+        r2.on 'error', (e) ->
+          @res.writeHead 500
+        r2.on 'end', ->
+          @json ok:true
+
+    r = backend.retrieve_document_meta @params.db, @params.doc
+    r.on 'data', (meta) ->
+      # Check revision
+      if @body._rev isnt meta.rev
+        @res.writeHead 409
+        return
+      # Check ID is consistent
+      if @body._id isnt meta.id
+        @res.writeHead 400
+        return
+      # Create new meta
+      new_meta = 
+        id: meta.id
+        version: meta.version+1
+      push_revision new_meta, @body
+
+    r.on 'error', ->
+      # New document
+      if @body._rev?
+        @res.writeHead 400
+        return
+      # Check ID is consistent
+      if @body._id isnt meta.id
+        @res.writeHead 400
+        return
+      # Create new meta
+      new_meta =
+        id: meta.id
+        version: 1
+      push_revision new_meta, @body
+
   @del  '/:db/:doc'
   @copy '/:db/:doc'
   #### Attachments
