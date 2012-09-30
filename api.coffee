@@ -1,3 +1,7 @@
+# This is a Zappa fragment.
+# Obviously the final code will have to be much closer to the wire
+# for performance purposes.
+
 @include = ->
 
   # backend API:
@@ -30,9 +34,6 @@
         'Cache-Control': 'must-revalidate'
       @res.writeHead 200, headers
 
-  # Actions maked 'system' are most probably implementation-dependent.
-  # Review what BigCouch et al. do for these.
-
     push_revision: (meta,body) ->
       meta.rev = body._rev = meta.version + '-' + new_uuid()
       body_as_json = JSON.stringify body
@@ -50,7 +51,10 @@
         r2.on 'end', ->
           @json ok:true
 
-#### Server-level misc. methods
+  # Actions maked 'system' are most probably implementation-dependent.
+  # Review what BigCouch et al. do for these.
+
+  # ### Server-level misc. methods
   @get '/', ->
       # http://wiki.apache.org/couchdb/HttpGetRoot
       # Note: Apache CouchDB sends text/plain, not json
@@ -118,7 +122,7 @@
   ensure_database '_utils'
   push_app '_utils'
 
-  #### Server configuration
+  # ### Server configuration
   # system?
   @get '/_config'
   @get '/_config/:section'
@@ -126,7 +130,7 @@
   @put '/_config/:section/:key'
   @del '/_config/:section/:key'
 
-  #### Authentication
+  # ### Authentication
   # Related note: authentication at query time is done by a specific
   # middleware, which requests auth based on configuration and path
   # (e.g. /_utils should probably be public and never request auth).
@@ -139,13 +143,13 @@
   @post '/_oauth/authorize'
   @all '/_oauth/request_token'
 
-  #### User database
+  # ### User database
   # This is a regular database
   # @all '/_users'
   ensure_database '_users'
   push_app '_users'
 
-  #### Database methods
+  # ### Database methods
   # Note: restrict db names to proper syntax (what is it?)
   # (At least cannot start with underscore.)
   @get '/:db', ->
@@ -184,7 +188,7 @@
   @get '/:db/_revs_limit'
   @put '/:db/_revs_limit'
 
-  #### Database document methods
+  # ### Database document methods
   # Note: resttrict doc names to valid ones (what are they?)
   # At least, cannot start with underscore.
   @post '/:db', ->
@@ -232,27 +236,27 @@
 
   @del  '/:db/:doc'
   @copy '/:db/:doc'
-  #### Attachments
+  # ### Attachments
   @get  '/:db/:doc/*'
   @put  '/:db/:doc/*'
   @del  '/:db/:doc/*'
-  #### Non-replicating documents
+  # ### Non-replicating documents
   @get  '/:db/_local/:doc'
   @put  '/:db/_local/:doc'
   @del  '/:db/_local/:doc'
   @copy '/:db/_local/:doc'
-  #### Design documents
+  # ### Design documents
   @get  '/:db/_design/:design'
   @put  '/:db/_design/:design'
   @del  '/:db/_design/:design'
   @copy '/:db/_design/:design'
-  #### Design documents attachments
+  # ### Design documents attachments
   # Note: attachment name cannot start with underscore
   @get  '/:db/_design/:design/*'
   @put  '/:db/_design/:design/*'
   @del  '/:db/_design/:design/*'
 
-  #### Special design document handlers
+  # ### Special design document handlers
   # Info
   @get  '/:db/_design/:design/_info'
   # Views
