@@ -1,4 +1,10 @@
 var express = require('express');
+var crypto = require('crypto');
+var md5sum_as_hex = function(b) {
+  var md5sum = crypto.createHash('md5');
+  md5sum.update(b);
+  return md5sum.digest('hex');
+};
 module.exports = function(opts) {
   var app = express(opts);
 
@@ -30,22 +36,26 @@ var include = function(app,backend) {
   };
 
   var send_error = function (res,error) {
+    console.dir(error);
     res.writeHead(error.status,error.error);
     res.end(JSON.stringify(error));
   }
 
   var push_revision = function(res,db,doc,meta,body) {
-    meta.rev = body._rev = meta.version + '-' + new_uuid();
-    var body_as_json = JSON.stringify(body);
-    var body_buffer = new Buffer(body_as_json);
-    meta.etag = md5sum_as_hex(body_buffer);
-    meta.length = body_buffer.length;
-    backend.update_seq(function(error,seqnum){
+    new_uuid(function(error,uuid){
       if(error) return send_error(res,error);
-      meta.local_seq = seqnum;
-      backend.update_document( req.params.db, req.params.doc, meta, body_as_json, function (error) {
+      meta.rev = body._rev = meta.version + '-' + uuid;
+      var body_as_json = JSON.stringify(body);
+      var body_buffer = new Buffer(body_as_json);
+      meta.etag = md5sum_as_hex(body_buffer);
+      meta.length = body_buffer.length;
+      backend.update_seq(db,function(error,seqnum){
         if(error) return send_error(res,error);
-        res.json({ok:true});
+        meta.local_seq = seqnum;
+        backend.update_document( db, doc, meta, body_as_json, function (error) {
+          if(error) return send_error(res,error);
+          res.json({ok:true,id:meta.id,rev:meta.rev,seq:seqnum});
+        });
       });
     });
   };
@@ -108,9 +118,9 @@ var include = function(app,backend) {
   start_replicators()
   */
 
-  /*
-  var couch_uuid = require('./uuids');
+  var new_uuid = require('./uuids');
 
+  /*
   // http://wiki.apache.org/couchdb/HttpGetUuids
   app.get( '/_uuids', function() {
     var count = req.query.count ? 1;
@@ -264,6 +274,7 @@ var include = function(app,backend) {
         , version: 1
         };
         push_revision( res, db, doc, new_meta, req.body );
+        return;
       }
       if(error) return send_error(res,error);
 

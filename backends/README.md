@@ -46,5 +46,5 @@ When error are sent, they are one of Pouch.Errors.
 
   The body is sent as a Node.js Buffer object.
 
-* `update_seq` (cb(error,seqnum))
+* `update_seq` (db,cb(error,seqnum))
 
