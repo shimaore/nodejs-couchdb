@@ -1,8 +1,8 @@
+var express = require('express');
 module.exports = function(opts) {
-  var express = require('express');
   var app = express(opts);
 
-  include(app);
+  include(app,opts.backend);
 
   if(!opts.port) {
     opts.port = 5984;
@@ -10,18 +10,9 @@ module.exports = function(opts) {
   app.listen(opts.port);
   return app;
 }
+var Couch = require('./couch');
 
-var include = function(app) {
-  //   update_document, db, doc_id, meta, body_buffer  # error, end
-  // Events:
-  //   # error occurred (final)
-  //   'error', (error) ->
-  //   # successful completion (final)
-  //   'end'
-  //   # one more to retrieve data
-  //   'data'
-
-  var backend = null;
+var include = function(app,backend) {
 
   var motd = 'Welcome';
 
@@ -40,7 +31,7 @@ var include = function(app) {
 
   var send_error = function (res,error) {
     res.writeHead(error.status,error.error);
-    res.json(error);
+    res.end(JSON.stringify(error));
   }
 
   var push_revision = function(res,db,doc,meta,body) {
@@ -117,10 +108,10 @@ var include = function(app) {
   start_replicators()
   */
 
+  /*
   var couch_uuid = require('./uuids');
 
   // http://wiki.apache.org/couchdb/HttpGetUuids
-  /*
   app.get( '/_uuids', function() {
     var count = req.query.count ? 1;
     var uuids = [];
@@ -257,13 +248,13 @@ var include = function(app) {
   });
   */
 
-  app.put( '/:db/:doc', function(req,res) {
+  app.put( '/:db/:doc', express.bodyParser(), function(req,res) {
     var db = req.params.db;
     var doc = req.params.doc;
     backend.retrieve_document_meta( db, doc, function (error,meta) {
       if(error === Couch.Errors.MISSING_DOC) {
         // New document
-        if( req.body._rev !== null ) {
+        if( req.body._rev ) {
           send_error(res,Couch.Errors.REV_CONFLICT); // FIXME is this the same error apache couchdb sends?
           return;
         }

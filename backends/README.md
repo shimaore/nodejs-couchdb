@@ -28,7 +28,7 @@ When error are sent, they are one of Pouch.Errors.
 
 * `destroy_database` (name,cb(error))
 
-* `enumerate_databases` (name,cb(stream))
+* `enumerate_databases` (cb(stream))
   The stream object:
   * supports:
       pause()
