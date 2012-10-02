@@ -16,3 +16,35 @@ There are multiple types of backends:
   - load-balancing (e.g. via sharding)
 
 As long as all backends have the same API they can be combined using any number of multiplexing backends; for example use a redundant multiplexing backend to save in memory using redis and on disk using the filesystem; or a load-balancing backend to build a front-end for large clusters, one of the shards being a multiplexing backend combining a local in-memory backend and a local filesystem backend.
+
+API
+===
+
+The API is a streaming API where needed.
+
+When error are sent, they are one of Pouch.Errors.
+
+* `create_database` (name,cb(error))
+
+* `destroy_database` (name,cb(error))
+
+* `enumerate_databases` (name,cb(stream))
+  The stream object:
+  * supports:
+      pause()
+      resume()
+  * emits:
+      data (name)     enumerate known databases in sorted order
+      error
+      end
+
+* `retrieve_document_meta` (db,id,cb(error,meta))
+
+* `retrieve_document` (db,id,cb(error,doc))
+
+* `update_document` (db,id,meta,buffer,cb(error))
+
+  The body is sent as a Node.js Buffer object.
+
+* `update_seq` (cb(error,seqnum))
+

@@ -1,10 +1,4 @@
 
-compare = (a,b) ->
-  # Implement the CouchDB comparison algorithm
-  #   compare(a,b) < 0  iff  a < b
-  #   compare(a,b) = 0  iff  a = b
-  #   compare(a,b) > 0  iff  a > b
-
 class RedundantBackends
 
   # This backends records the same data in all its underlying backends.

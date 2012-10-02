@@ -1,0 +1,5 @@
+{
+  "name": "chesterfield"
+, "version": "0.1.0"
+, "description": "A CouchDB API-compatible HTTP server"
+}
